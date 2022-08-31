@@ -1,0 +1,140 @@
+name: Generic Deploy for k8s resources (.NET app)
+
+on:
+  workflow_call:
+    inputs:
+      DOCKER_IMAGEBASE:
+        required: true
+        type: string
+      DOCKER_FILEPATH: 
+        type: string
+        required: true
+      DOCKER_CONTEXT_X:
+        required: true
+        type: string
+      K8S_RESOURCENAME: 
+        type: string
+        required: true
+      K8S_ADDITIONAL_RESOURCE:
+        type: string
+        required: false
+      K8S_NAMESPACE:
+        required: true
+        type: string
+      K8S_OBJECTTYPE: 
+        type: string
+        required: true
+      K8S_CONTAINERNAME:
+        type: string
+        required: true
+    secrets:
+      DOCKERHUB_TOKEN:
+        required: true
+      GPACKAGES_TOKEN:
+        required: true
+      KUBECONFIG:
+        required: true
+      AWS_CREDENTIALS:
+        required: false
+
+jobs:
+  checkout-build-dockerize-and-redeploy:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          #submodules: false
+          #lfs: true
+          clean: true
+
+      - name: Check initial folder
+        run: |
+          echo "Checked out code"
+          ls -la
+          echo $PWD
+
+      - name: Copy global files to sub directory
+        #working-directory: /src/
+        run: |
+          cp .dockerignore ./src && cp Directory.Build.props ./src
+          rm -rf tmp/
+          rm -rf output/
+          ls -la ./src
+      
+      - name: Output debug information
+        id: path_definition
+        run: |
+          ls -la
+          echo $PWD
+          echo ${GITHUB_WORKSPACE}/src
+          echo "PROJECT_DIR=${GITHUB_WORKSPACE}/src" >> $GITHUB_ENV
+          echo ::set-output name=PROJECT_DIR::"${GITHUB_WORKSPACE}/src"
+      
+      - name: Extract Git Branch information
+        id: branch_name
+        run: |
+          MBRANCH=${GITHUB_REF#refs/*/}
+          GITSHA=${GITHUB_SHA::8}
+          BRANCH=${MBRANCH#feature/}
+          echo "$BRANCH";
+          if ["$BRANCH" == "develop"]; then BRANCH="$(BRANCH)$(date +%s)"; fi
+          echo ::set-output name=SOURCE_NAME::$BRANCH
+          echo ::set-output name=SOURCE_BRANCH::${GITHUB_REF#refs/heads/}
+          echo ::set-output name=SOURCE_TAG::${GITHUB_REF#refs/tags/}
+          echo ::set-output name=DOCKERIMAGEANDTAG::${{ inputs.DOCKER_IMAGEBASE }}:$BRANCH
+          echo SOURCE_NAME $SOURCE_NAME $BRANCH ~ALSO~ SOURCE_TAG $SOURCE_TAG ~ALSO~ SHA $GITSHA
+      
+      - name: Set Google DNS
+        run: echo "nameserver 8.8.8.8" > /etc/resolv.conf && echo "nameserver 8.8.4.4" >> /etc/resolv.conf
+      
+      - uses: docker/login-action@v1
+        if: ${{ !env.ACT }}
+        with:
+          username: hustlegotreal
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      #- name: Set up Docker Buildx (already installed in runners)
+      #  uses: docker/setup-buildx-action@v1
+
+      - name: Build and push Docker image
+        id: docker_build
+        uses: docker/build-push-action@v2
+        with:
+          push: true
+          tags: ${{ steps.branch_name.outputs.DOCKERIMAGEANDTAG }}
+          #  --tag my-image-name:$(date +%s)
+          context: ${{ inputs.DOCKER_CONTEXT_X}}
+          file: ${{ inputs.DOCKER_FILEPATH }}
+          secrets: |
+            "GPACKAGESTOKEN=${{ secrets.GPACKAGES_TOKEN }}"
+          
+      - name: Generate patch command for kubectl
+        if: ${{ !env.ACT }}
+        id: patch_cmd
+        run: |
+          CMD='{"spec": {"template": {"spec": {"containers": [{"name":"${{ inputs.K8S_CONTAINERNAME }}","image": "${{ steps.branch_name.outputs.DOCKERIMAGEANDTAG }}"}] }}}}'
+          if [ ${{ inputs.K8S_OBJECTTYPE }} == "cronjob" ]; then
+          CMD='{"spec": {"jobTemplate": {"spec": {"template": {"spec": {"containers": [{"name":"${{ inputs.K8S_CONTAINERNAME }}","image": "${{ steps.branch_name.outputs.DOCKERIMAGEANDTAG }}"}] }}}}}}' ;
+          fi
+          echo Going to execute : $CMD
+          echo ::set-output name=K8SPATCH::$CMD
+
+      - name: Add github-ci User to AWS Credentials file
+        continue-on-error: true
+        run: echo "${{ secrets.AWS_CREDENTIALS }}" > /root/.aws/credentials
+
+      - name: Create kubeconfig
+        run: echo ${{ secrets.KUBECONFIG }} | base64 --decode > /root/.kube/config
+      
+      - name: Update version in Cluster
+        if: ${{ !env.ACT }}
+        run: "kubectl --insecure-skip-tls-verify patch ${{ inputs.K8S_OBJECTTYPE }} ${{ inputs.K8S_RESOURCENAME }} ${{ inputs.K8S_ADDITIONAL_RESOURCE }} -n ${{ inputs.K8S_NAMESPACE }} --patch '${{ steps.patch_cmd.outputs.K8SPATCH }}'"
+
+      - name: Redeploy
+        if: ${{ (!env.ACT) && (inputs.K8S_OBJECTTYPE != 'cronjob') }}
+        run: "kubectl --insecure-skip-tls-verify rollout restart ${{ inputs.K8S_OBJECTTYPE }} ${{ inputs.K8S_RESOURCENAME }} ${{ inputs.K8S_ADDITIONAL_RESOURCE }} -n ${{ inputs.K8S_NAMESPACE }}"
+
+      - name: Verify Deployment
+        if: ${{ (!env.ACT) && (inputs.K8S_OBJECTTYPE != 'cronjob') }}
+        run: "kubectl --insecure-skip-tls-verify rollout status ${{ inputs.K8S_OBJECTTYPE }} ${{ inputs.K8S_RESOURCENAME }} -n ${{ inputs.K8S_NAMESPACE }} --timeout=3m"
