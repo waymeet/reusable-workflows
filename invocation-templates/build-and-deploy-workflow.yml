@@ -1,0 +1,39 @@
+
+name: Build container image and deploy
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - '*.*.*'
+      - 'v*.*.*'
+
+jobs:
+  build-and-push-image:
+    uses: HustleGotReal/reusable-workflows/.github/workflows/build-dotnet-image.yml@master
+    with:
+      DOCKER_IMAGEBASE: hustlegotreal/newmicroapi
+      DOCKER_FILEPATH: ./src/NewMicroApi/Dockerfile
+      DOCKER_CONTEXT_X: ./src/
+    secrets:
+      DOCKERHUB_TOKEN: ${{secrets.DOCKERHUB_TOKEN}}
+      GPACKAGES_TOKEN: ${{secrets.GPACKAGES_TOKEN}}
+
+  update-kubernetes-resource:
+    needs: build-and-push-image
+    uses: HustleGotReal/reusable-workflows/.github/workflows/deploy-k8s-generic-app.yml@master
+    with:
+      DOCKER_IMAGEBASE: hustlegotreal/newmicroapi
+      K8S_RESOURCENAME: newmicroapi
+      K8S_ADDITIONAL_RESOURCE: ""
+      K8S_OBJECTTYPE: deployment
+      K8S_CONTAINERNAME: newmicroapi
+      K8S_NAMESPACE: live
+    secrets:
+      KUBECONFIG: ${{secrets.KUBECONFIG}}
+
+  analyze-code:
+    uses: HustleGotReal/reusable-workflows/.github/workflows/analyze-code-sonarqubecli.yml@master
+    secrets:
+      SONARQUBE_HOST: ${{secrets.SONARQUBE_HOST}}
+      SONARQUBE_TOKEN: ${{secrets.SONARQUBE_TOKEN}}
