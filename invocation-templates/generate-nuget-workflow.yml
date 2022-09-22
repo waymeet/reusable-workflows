@@ -1,0 +1,31 @@
+name: Generate NuGet and push to Github
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'master'
+      - 'develop'
+      - 'feature/*'
+      - '!feature/makenugets'
+      - '!feature/dotnetworkflow'
+    paths-ignore:
+      - '.github/**'
+  pull_request:
+    types: [closed]
+    branches:
+      - master
+
+jobs:
+  simple-job-for-reuse-workflow:
+    uses: HustleGotReal/reusable-workflows/.github/workflows/makenugets.yml@master
+    with:
+      DOTNET_PROJECT: NewMicroApi.Client
+      DOTNET_CSPROJ: ./src/NewMicroApi.Client/NewMicroApi.Client.csproj
+      RESTORE_SOURCES: --source https://api.nuget.org/v3/index.json
+      CONFIGURATION: Release
+      FRAMEWORK: net5.0
+      RUNTIME: linux-x64
+      ADDITIONAL_PROPERTIES: ""
+    secrets:
+      GPACKAGES_TOKEN: ${{secrets.GPACKAGES_TOKEN}}
