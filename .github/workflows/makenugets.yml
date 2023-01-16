@@ -1,3 +1,4 @@
+
 name: Generate NuGet and push to Github
 
 on:
@@ -6,7 +7,7 @@ on:
       DOTNET_PROJECT:
         required: true
         type: string
-      DOTNET_CSPROJ: 
+      DOTNET_CSPROJ:
         type: string
         required: true
       RESTORE_SOURCES:
@@ -15,13 +16,13 @@ on:
       CONFIGURATION:
         required: true
         type: string
-      FRAMEWORK: 
+      FRAMEWORK:
         type: string
         required: true
       RUNTIME:
         required: true
         type: string
-      ADDITIONAL_PROPERTIES: 
+      ADDITIONAL_PROPERTIES:
         type: string
         required: false
     secrets:
@@ -32,10 +33,10 @@ jobs:
   generate-nuget-and-push:
     runs-on: self-hosted
     timeout-minutes: 15
-    
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           #submodules: false
           #lfs: true
@@ -46,18 +47,13 @@ jobs:
         run: |
           echo "Checked out code"
           ls -la
-          
-      - name: Output debug information
-        id: path_definition
-        run: |
           echo $PWD
           echo ${GITHUB_WORKSPACE}/src
-          
+
       - name: Extract Git Branch information
         id: branch_name
         run: |
           MBRANCH=${GITHUB_REF#refs/*/}
-          GITSHA=${GITHUB_SHA::8}
           if [[ $MBRANCH == feature/* ]]; then
             BRANCH="a-${MBRANCH#feature/}.$(date +%Y%m%d%H%M)"
           elif [[ $MBRANCH == "master" ]] || [[ $MBRANCH == "main" ]]; then
@@ -65,21 +61,22 @@ jobs:
           else
             BRANCH="${MBRANCH}.$(date +%Y%m%d%H%M)"
           fi
-          echo BRANCH: $BRANCH
-          echo ::set-output name=BRANCH::$BRANCH
+          echo "BRANCH: $BRANCH";
+          echo "BRANCH=$BRANCH" >> $GITHUB_OUTPUT
+          echo "Started by: $GITHUB_ACTOR | SHA: $GITHUB_SHA | Tag: ${GITHUB_REF#refs/tags/}"
 
       - name: Get Previous Tag
         id: get_previous_tag
         #uses: WyriHaximus/github-action-get-previous-tag@v1
         run: |
           VERSIONPROPS=$(cat Directory.Build.props | grep "<VersionPrefix>" | cut -d ">" -f2 | cut -d "<" -f1)
-          echo ::set-output name=tag::$VERSIONPROPS
-        
+          echo "tag=$VERSIONPROPS" >> $GITHUB_OUTPUT
+
       - name: Set VERSION variable from Directory.Build.props
         id: version_num
         run: |
           echo VERSION: ${{ steps.get_previous_tag.outputs.tag }}
-          echo ::set-output name=VERSION::${{ steps.get_previous_tag.outputs.tag }}
+          echo "VERSION=${{ steps.get_previous_tag.outputs.tag }}" >> $GITHUB_OUTPUT
 
       - name: Check if package exists
         run: |
@@ -87,11 +84,11 @@ jobs:
            -H "Accept: application/vnd.github.v3+json" -u hgrbot:${{ secrets.GPACKAGES_TOKEN }} \
            https://api.github.com/orgs/HustleGotReal/packages/nuget/${{ inputs.DOTNET_PROJECT }}/versions | grep '"${{ steps.version_num.outputs.VERSION }}"' > /dev/null) \
           -eq 0 ]; then
-           [[ -n "${{ steps.branch_name.outputs.BRANCH }}" ]] || (echo "This version of the package already exists in this branch" ; exit 1) 
+           [[ -n "${{ steps.branch_name.outputs.BRANCH }}" ]] || (echo "This version of the package already exists in this branch" ; exit 1)
           else
            echo "This package doesn't exists yet"
           fi
-         
+
       #- name: Setup NuGet
       #  uses: NuGet/setup-nuget@v1.0.5
 
@@ -99,16 +96,16 @@ jobs:
       #  uses: actions/setup-dotnet@v1
       #  with:
       #    dotnet-version: 6.0.x
-          
+
       - name: Ensure addition of nugets source (Github Packages)
         continue-on-error: true
         run: dotnet nuget add source --username hgrbot --password ${{ secrets.GPACKAGES_TOKEN }} --store-password-in-clear-text --name github "https://nuget.pkg.github.com/HustleGotReal/index.json"
-       
+
       - name: Restore
         run: |
              dotnet restore /property:Configuration=${{ inputs.CONFIGURATION }} /property:TargetFramework=${{ inputs.FRAMEWORK }} --runtime ${{ inputs.RUNTIME }} \
              ${{ inputs.DOTNET_CSPROJ }} --source https://nuget.pkg.github.com/HustleGotReal/index.json ${{ inputs.RESTORE_SOURCES }}
-        
+
       - name: Build
         run: |
              dotnet build -f ${{ inputs.FRAMEWORK }} -r ${{ inputs.RUNTIME }} ${{ inputs.DOTNET_CSPROJ }} /property:Configuration=${{ inputs.CONFIGURATION }} ${{ inputs.ADDITIONAL_PROPERTIES }} /p:GenerateAssemblyInfo=true /p:DebugSymbols=true /p:DebugType=portable /p:SymbolPackageFormat=snupkg \
@@ -129,15 +126,14 @@ jobs:
         run: /root/.dotnet/tools/gpr push nupkg-tmp/${{ inputs.DOTNET_PROJECT }}.${{ steps.version_num.outputs.VERSION }}*${{ steps.branch_name.outputs.BRANCH }}.nupkg --repository https://github.com/HustleGotReal/nugets -k ${GPACKAGESTOKEN}
         env:
           GPACKAGESTOKEN: ${{ secrets.GPACKAGES_TOKEN }}
-      
+
       - name: Delete old nugets versions
         continue-on-error: true
         if: ${{ steps.branch_name.outputs.BRANCH }} == ""
-        uses: actions/delete-package-versions@v2
-        with: 
+        uses: actions/delete-package-versions@v3
+        with:
           package-name: ${{ inputs.DOTNET_PROJECT }}
           repo: 'nugets'
           token: ${{ secrets.GPACKAGES_TOKEN }}
           min-versions-to-keep: 40
           delete-only-pre-release-versions: "false"
-
