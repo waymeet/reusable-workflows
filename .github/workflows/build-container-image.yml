@@ -12,17 +12,32 @@ on:
       DOCKER_CONTEXT_X:
         required: true
         type: string
+      OPTIONAL:
+        required: false
+        type: string
     secrets:
       DOCKERHUB_TOKEN:
         required: true
+      GH_PAT:
+        required: false
+    outputs:
+      source_tag:
+        description: "Release version or branch name that will be used for another reusable workflow"
+        value: ${{ jobs.build-and-push-image.outputs.tag }}
+      image_base:
+        description: "Docker image and repo name"
+        value: ${{ inputs.DOCKER_IMAGEBASE }}
 
 jobs:
   build-and-push-image:
     runs-on: self-hosted
 
+    outputs:
+      tag: ${{ steps.branch_name.outputs.SOURCE_TAG }}
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           #submodules: false
           #lfs: true
@@ -33,29 +48,44 @@ jobs:
           echo "Checked out code"
           ls -la
           echo $PWD
-
+          echo ${GITHUB_WORKSPACE}/src
+          echo "PROJECT_DIR=${GITHUB_WORKSPACE}/src" >> $GITHUB_OUTPUT
+      - name: If it is a .NET project. Copy global files to sub directory
+        continue-on-error: true
+        #working-directory: /src/                
+        run: |
+          cp .dockerignore ./src
+          cp Directory.Build.props ./src
+          rm -rf tmp/
+          rm -rf output/
+          ls -la ./src
       - name: Extract Git Branch information
         id: branch_name
         run: |
           MBRANCH=${GITHUB_REF#refs/*/}
           BRANCH=${MBRANCH#feature/}
           echo "BRANCH: $BRANCH";
-          if [[ "$BRANCH" == "develop" ]]; then BRANCH="$(BRANCH)$(date +%s)"; fi
-          echo "SOURCE_TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          echo "DOCKERIMAGEANDTAG=${{ inputs.DOCKER_IMAGEBASE }}:$BRANCH" >> $GITHUB_OUTPUT
-          echo "Started by: $GITHUB_ACTOR | SHA: $GITHUB_SHA | Tag: ${GITHUB_REF#refs/tags/}"
-
-      - uses: docker/login-action@v1
+          if [["$BRANCH" == "develop"]]; then BRANCH="$(BRANCH)$(date +%s)"; fi
+          echo "SOURCE_TAG=$BRANCH" >> $GITHUB_OUTPUT
+          echo "DOCKERIMAGEANDTAG=${{ inputs.DOCKER_IMAGEBASE }}:${{ inputs.OPTIONAL }}-$BRANCH" >> $GITHUB_OUTPUT
+          echo "Started by: $GITHUB_ACTOR | SHA: $GITHUB_SHA | Tag: $BRANCH"
+      - uses: docker/login-action@v2
         if: ${{ !env.ACT }}
         with:
           username: waymeet
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      #- name: Set up Docker Buildx (already installed in runners)
+      #  uses: docker/setup-buildx-action@v1
+
       - name: Build and push Docker image
         id: docker_build
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           push: true
           tags: ${{ steps.branch_name.outputs.DOCKERIMAGEANDTAG }}
+          #  --tag my-image-name:$(date +%s)
           context: ${{ inputs.DOCKER_CONTEXT_X}}
           file: ${{ inputs.DOCKER_FILEPATH }}
+          secrets: |
+            "GH_PAT=${{ secrets.GH_PAT }}"
