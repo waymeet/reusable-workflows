@@ -51,16 +51,6 @@ jobs:
           echo ${GITHUB_WORKSPACE}/src
           echo "PROJECT_DIR=${GITHUB_WORKSPACE}/src" >> $GITHUB_OUTPUT
 
-      - name: If it is a .NET project. Copy global files to sub directory
-        continue-on-error: true
-        #working-directory: /src/                
-        run: |
-          cp .dockerignore ./src
-          cp Directory.Build.props ./src
-          rm -rf tmp/
-          rm -rf output/
-          ls -la ./src
-
       - name: Extract Git Branch information
         id: branch_name
         run: |
@@ -72,18 +62,19 @@ jobs:
           echo "DOCKERIMAGEANDTAG=${{ inputs.DOCKER_IMAGEBASE }}:${{ inputs.OPTIONAL }}-$BRANCH" >> $GITHUB_OUTPUT
           echo "Started by: $GITHUB_ACTOR | SHA: $GITHUB_SHA | Tag: $BRANCH"
 
+      - name: Create buildx builder
+        continue-on-error: true
+        run: docker buildx create --name mybuilder --platform linux/arm64/v8,linux/amd64
+
       - uses: docker/login-action@v2
         if: ${{ !env.ACT }}
         with:
           username: waymeet
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      #- name: Set up Docker Buildx (already installed in runners)
-      #  uses: docker/setup-buildx-action@v1
-
       - name: Build and push Docker image
         id: docker_build
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v4
         with:
           push: true
           tags: ${{ steps.branch_name.outputs.DOCKERIMAGEANDTAG }}
