@@ -45,7 +45,7 @@ jobs:
           echo "DOCKERIMAGEANDTAG=${{ inputs.DOCKER_IMAGEBASE }}:$BRANCH" >> $GITHUB_OUTPUT
           echo "Started by: $GITHUB_ACTOR | SHA: $GITHUB_SHA | Tag: ${GITHUB_REF#refs/tags/}"
 
-      - uses: docker/login-action@v1
+      - uses: docker/login-action@v2
         if: ${{ !env.ACT }}
         with:
           username: waymeet
@@ -53,7 +53,7 @@ jobs:
 
       - name: Build and push Docker image
         id: docker_build
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v4
         with:
           push: true
           tags: ${{ steps.branch_name.outputs.DOCKERIMAGEANDTAG }}
