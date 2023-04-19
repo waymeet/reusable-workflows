@@ -63,6 +63,7 @@ jobs:
           echo "Started by: $GITHUB_ACTOR | SHA: $GITHUB_SHA | Tag: $BRANCH"
 
       - name: Create buildx builder
+        continue-on-error: true
         run: docker buildx create --name mybuilder --platform linux/arm64/v8,linux/amd64
 
       - uses: docker/login-action@v2
