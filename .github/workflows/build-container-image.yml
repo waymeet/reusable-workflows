@@ -59,3 +59,4 @@ jobs:
           tags: ${{ steps.branch_name.outputs.DOCKERIMAGEANDTAG }}
           context: ${{ inputs.DOCKER_CONTEXT_X}}
           file: ${{ inputs.DOCKER_FILEPATH }}
+          platforms: linux/amd64,linux/arm64
