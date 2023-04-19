@@ -50,6 +50,7 @@ jobs:
           echo $PWD
           echo ${GITHUB_WORKSPACE}/src
           echo "PROJECT_DIR=${GITHUB_WORKSPACE}/src" >> $GITHUB_OUTPUT
+
       - name: If it is a .NET project. Copy global files to sub directory
         continue-on-error: true
         #working-directory: /src/                
@@ -59,6 +60,7 @@ jobs:
           rm -rf tmp/
           rm -rf output/
           ls -la ./src
+
       - name: Extract Git Branch information
         id: branch_name
         run: |
@@ -69,6 +71,7 @@ jobs:
           echo "SOURCE_TAG=$BRANCH" >> $GITHUB_OUTPUT
           echo "DOCKERIMAGEANDTAG=${{ inputs.DOCKER_IMAGEBASE }}:${{ inputs.OPTIONAL }}-$BRANCH" >> $GITHUB_OUTPUT
           echo "Started by: $GITHUB_ACTOR | SHA: $GITHUB_SHA | Tag: $BRANCH"
+
       - uses: docker/login-action@v2
         if: ${{ !env.ACT }}
         with:
@@ -84,8 +87,8 @@ jobs:
         with:
           push: true
           tags: ${{ steps.branch_name.outputs.DOCKERIMAGEANDTAG }}
-          #  --tag my-image-name:$(date +%s)
           context: ${{ inputs.DOCKER_CONTEXT_X}}
           file: ${{ inputs.DOCKER_FILEPATH }}
+          platforms: linux/amd64,linux/arm64
           secrets: |
             "GH_PAT=${{ secrets.GH_PAT }}"
