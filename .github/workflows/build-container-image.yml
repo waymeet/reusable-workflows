@@ -64,7 +64,7 @@ jobs:
 
       - name: Create buildx builder
         run: |
-          if [ "$(docker buildx inspect | head -n1 | cut -d " " -f4)" != "mybuilder" ]; then
+          if [ "$(docker buildx inspect | head -n1 | awk '{print $2}')" != "mybuilder" ]; then
             docker buildx create --name mybuilder --platform linux/arm64/v8,linux/amd64 --use
           else
             echo "The buildx instance already exists and is the default."
