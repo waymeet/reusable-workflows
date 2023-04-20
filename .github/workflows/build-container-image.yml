@@ -63,8 +63,12 @@ jobs:
           echo "Started by: $GITHUB_ACTOR | SHA: $GITHUB_SHA | Tag: $BRANCH"
 
       - name: Create buildx builder
-        continue-on-error: true
-        run: docker buildx create --name mybuilder --platform linux/arm64/v8,linux/amd64 --use; docker buildx inspect --bootstrap
+        run: |
+          if [ "$(docker buildx inspect | head -n1 | cut -d " " -f4)" != "mybuilder" ]; then
+            docker buildx create --name mybuilder --platform linux/arm64/v8,linux/amd64 --use
+          else
+            echo "The buildx instance already exists and is the default."
+          fi
 
       - uses: docker/login-action@v2
         if: ${{ !env.ACT }}
